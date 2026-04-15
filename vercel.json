@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/cron/outcome-prompts",
+      "path": "/api/cron/scrape-rates",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/aggregate-benchmarks",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/outcome-prompts",
+      "schedule": "0 10 * * *"
     }
   ]
 }

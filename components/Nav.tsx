@@ -50,7 +50,7 @@ export default function Nav() {
           cursor: "pointer",
         }}
       >
-        Contribute your rate
+        Check my rate →
       </button>
 
       {/* Mobile hamburger */}
@@ -85,7 +85,7 @@ export default function Nav() {
           <Link href="/data" onClick={() => setOpen(false)} style={{ color: "var(--text2)", textDecoration: "none", fontSize: 15 }}>Data</Link>
           <Link href="/about" onClick={() => setOpen(false)} style={{ color: "var(--text2)", textDecoration: "none", fontSize: 15 }}>About</Link>
           <button onClick={scrollToCalc} style={{ background: "var(--amber)", color: "var(--ink)", fontWeight: 600, padding: "10px 0", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 14 }}>
-            Contribute your rate
+            Check my rate →
           </button>
         </div>
       )}

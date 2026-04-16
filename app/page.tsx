@@ -98,7 +98,7 @@ function Tip({ text }: { text: string }) {
           position: "absolute", bottom: "calc(100% + 6px)", left: 0,
           background: "var(--ink)", border: "1px solid var(--ink4)",
           borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "var(--text2)",
-          lineHeight: 1.55, width: 220, zIndex: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          lineHeight: 1.55, width: 220, zIndex: 50, boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
         }}>
           {text}
           <button onClick={() => setOpen(false)} style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 14 }}>×</button>
@@ -355,7 +355,23 @@ export default function Home() {
         </div>
 
         {/* Two-column layout: form + trust panel */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, maxWidth: 1060, marginBottom: 52, alignItems: "start" }}>
+        <style>{`
+          @media (max-width: 900px) {
+            .form-trust-grid { grid-template-columns: 1fr !important; }
+            .trust-panel { position: static !important; }
+            .calc-form-grid { grid-template-columns: 1fr !important; }
+          }
+          .how-it-works-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+          @media (max-width: 768px) {
+            .how-it-works-grid { grid-template-columns: 1fr !important; }
+            .trust-bar-inner { flex-direction: column !important; }
+            .trust-bar-inner > div { border-right: none !important; border-bottom: 1px solid var(--ink4); padding: 16px 0 !important; }
+            .trust-bar-inner > div:last-child { border-bottom: none !important; }
+          }
+          .step-card:hover { border-color: rgba(240,165,0,0.3) !important; }
+          .step-card { transition: border-color 0.15s; }
+        `}</style>
+        <div className="form-trust-grid" style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, maxWidth: 1060, marginBottom: 52, alignItems: "start" }}>
 
           {/* Calculator card */}
           <div id="calculator" style={{
@@ -366,7 +382,7 @@ export default function Home() {
               Your mortgage details
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
+            <div className="calc-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
               {/* Lender */}
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Your lender</label>
@@ -667,8 +683,8 @@ export default function Home() {
             )}
           </div>
 
-          {/* FIX 4: Trust panel beside the form */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: 100 }}>
+          {/* Trust panel beside the form */}
+          <div className="trust-panel" style={{ display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: 100 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 4 }}>
               Why trust this
             </div>
@@ -715,9 +731,9 @@ export default function Home() {
         {/* Trust bar */}
         <div style={{
           borderTop: "1px solid var(--ink4)", borderBottom: "1px solid var(--ink4)",
-          padding: "28px 0", display: "flex", alignItems: "center", flexWrap: "wrap",
-          marginBottom: 0,
+          padding: "28px 0", marginBottom: 0,
         }}>
+          <div className="trust-bar-inner" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
           {[
             { icon: "⚡", stat: stats.submissions.toLocaleString(), label: "borrowers have checked their rate" },
             { icon: "📊", stat: `${stats.outcomes.toLocaleString()} call outcomes`, label: `reported across ${stats.lenders} lenders` },
@@ -741,6 +757,29 @@ export default function Home() {
               </div>
             </div>
           ))}
+          </div>
+        </div>
+      </div>
+
+      {/* How it works — moved before FAQ */}
+      <div id="how" style={{ maxWidth: 1100, margin: "0 auto", padding: "72px 48px 0" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "2.5px", textTransform: "uppercase", color: "var(--amber)", marginBottom: 16 }}>How it works</div>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: "clamp(26px,3vw,36px)", marginBottom: 8, letterSpacing: "-0.5px" }}>Three steps. One call.</h2>
+        <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 28, lineHeight: 1.7 }}>
+          You check. You call. You save. Then you tell us what happened — so the next person knows exactly what to expect from your lender.
+        </p>
+        <div className="how-it-works-grid" style={{ paddingBottom: 72 }}>
+          {[
+            { n: "01 — CHECK", title: "Enter your mortgage details", body: "Tell us your lender, loan type, LVR, and current rate. We calculate your loyalty tax using real crowd-sourced data from thousands of Australian borrowers — not estimates, not modelling." },
+            { n: "02 — ACT", title: "Call your bank armed with data", body: "We give you a personalised call script, the specific rate to ask for, and the success rate for your exact lender profile. Most borrowers spend under 15 minutes on the call." },
+            { n: "03 — REPORT", title: "Tell us what happened", body: "Did they reduce your rate? By how much? Your outcome is added anonymously to the benchmark — making the next person's negotiation more powerful." },
+          ].map((s) => (
+            <div key={s.n} className="step-card" style={{ background: "var(--ink2)", border: "1px solid var(--ink4)", borderRadius: 13, padding: 26 }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--amber)", fontWeight: 600, letterSpacing: "1.5px", marginBottom: 14, display: "block" }}>{s.n}</span>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 9 }}>{s.title}</h3>
+              <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.65 }}>{s.body}</p>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -759,28 +798,6 @@ export default function Home() {
             { q: "Is my data shared with my bank?", a: "Never. Your data is never shared with lenders, sold, or attributed to you individually. Your email is hashed in your browser before transmission — the raw address never reaches our servers." },
           ].map((item, i) => (
             <FAQItem key={i} q={item.q} a={item.a} />
-          ))}
-        </div>
-      </div>
-
-      {/* How it works */}
-      <div id="how" style={{ maxWidth: 1100, margin: "0 auto", padding: "72px 48px 0" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "2.5px", textTransform: "uppercase", color: "var(--amber)", marginBottom: 16 }}>How it works</div>
-        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: "clamp(26px,3vw,36px)", marginBottom: 8, letterSpacing: "-0.5px" }}>Three steps. One call.</h2>
-        <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 28, lineHeight: 1.7 }}>
-          You check. You call. You save. Then you tell us what happened — so the next person knows exactly what to expect from your lender.
-        </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, paddingBottom: 72 }}>
-          {[
-            { n: "01 — CHECK", title: "Enter your mortgage details", body: "Tell us your lender, loan type, LVR, and current rate. We calculate your loyalty tax using real crowd-sourced data from thousands of Australian borrowers — not estimates, not modelling." },
-            { n: "02 — ACT", title: "Call your bank armed with data", body: "We give you a personalised call script, the specific rate to ask for, and the success rate for your exact lender profile. Most borrowers spend under 15 minutes on the call." },
-            { n: "03 — REPORT", title: "Tell us what happened", body: "Did they reduce your rate? By how much? Your outcome is added anonymously to the benchmark — making the next person's negotiation more powerful." },
-          ].map((s) => (
-            <div key={s.n} style={{ background: "var(--ink2)", border: "1px solid var(--ink4)", borderRadius: 13, padding: 26 }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--amber)", fontWeight: 600, letterSpacing: "1.5px", marginBottom: 14, display: "block" }}>{s.n}</span>
-              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 9 }}>{s.title}</h3>
-              <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.65 }}>{s.body}</p>
-            </div>
           ))}
         </div>
       </div>

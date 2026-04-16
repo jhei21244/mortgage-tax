@@ -151,7 +151,7 @@ export default function LendersClient({ initialData }: { initialData: Benchmark[
                       )}
                     </td>
                     <td style={{ padding: "14px 16px", borderBottom: "1px solid var(--ink3)", fontSize: 12, color: "var(--text3)" }}>
-                      {new Date(row.last_updated).toLocaleDateString("en-AU")}
+                      {new Date(row.last_updated).toLocaleDateString("en-AU", { day: "2-digit", month: "2-digit" })} · {new Date(row.last_updated).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })}
                     </td>
                   </tr>
                 ))}
@@ -177,9 +177,10 @@ const filterSelect: React.CSSProperties = {
   border: "1px solid var(--ink4)",
   borderRadius: 8,
   color: "var(--text)",
-  padding: "9px 36px 9px 12px",
+  padding: "9px 40px 9px 12px",
   fontSize: 13,
   fontFamily: "'DM Sans', system-ui, sans-serif",
   outline: "none",
   cursor: "pointer",
+  minWidth: 160,
 };

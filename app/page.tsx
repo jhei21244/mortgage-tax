@@ -32,7 +32,7 @@ const LVR_LABELS: Record<string, string> = {
 };
 
 const YEARS_TO_LVR: Record<string, string> = {
-  "lt1": "lt60",
+  lt1: "lt60",
   "1_2": "60_70",
   "3_4": "60_70",
   "5_7": "70_80",
@@ -47,6 +47,13 @@ const HUMAN_ANCHORS = [
   "a new car deposit",
   "a Bali holiday every year",
 ];
+
+// Jargon tooltips
+const TOOLTIPS: Record<string, string> = {
+  lvr: "LVR = loan amount ÷ property value. E.g. $500k loan on $700k property = 71% LVR.",
+  loanType: "P&I = you repay principal + interest each month. IO = interest-only repayments.",
+  balance: "Your current outstanding loan balance — not the original loan amount.",
+};
 
 async function sha256(message: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(message);
@@ -71,6 +78,50 @@ interface Stats {
   lenders: number;
 }
 
+// Tooltip chip component
+function Tip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: "var(--ink4)", border: "none", color: "var(--text3)",
+          fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4,
+          cursor: "pointer", marginLeft: 6, letterSpacing: "0.3px",
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: 0,
+          background: "var(--ink)", border: "1px solid var(--ink4)",
+          borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "var(--text2)",
+          lineHeight: 1.55, width: 220, zIndex: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+        }}>
+          {text}
+          <button onClick={() => setOpen(false)} style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 14 }}>×</button>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// Sparse data fallback banner
+function SparseBanner({ lender }: { lender: string }) {
+  return (
+    <div style={{
+      background: "rgba(240,165,0,0.06)", border: "1px solid rgba(240,165,0,0.2)",
+      borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text2)",
+      marginBottom: 16, lineHeight: 1.5,
+    }}>
+      <strong style={{ color: "var(--amber)" }}>Using broader estimates</strong> — we don't have enough {lender} submissions in your exact segment yet.
+      Showing figures based on similar variable owner-occupier loans. Data improves as more borrowers contribute.
+    </div>
+  );
+}
+
 export default function Home() {
   const [lender, setLender] = useState("NAB");
   const [loanType, setLoanType] = useState("variable_pi");
@@ -81,6 +132,7 @@ export default function Home() {
   const [rateError, setRateError] = useState("");
 
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
+  const [isFallbackBenchmark, setIsFallbackBenchmark] = useState(false);
   const [calcResult, setCalcResult] = useState<{
     annualTax: number;
     fiveYearTax: number;
@@ -117,10 +169,33 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Try exact segment first
+      let bm: Benchmark | null = null;
+      let usedFallback = false;
+
       const res = await fetch(
         `/api/benchmark?lender=${encodeURIComponent(lender)}&loan_type=${loanType}&lvr_band=${lvrBand}`
       );
-      const bm: Benchmark = await res.json();
+
+      if (res.ok) {
+        bm = await res.json();
+        // If sample size is too low, mark as sparse
+        if (bm && bm.sample_size < 30) {
+          usedFallback = true;
+          // Try broader fallback: same lender, variable_pi, 60_70
+          const fallback = await fetch(
+            `/api/benchmark?lender=${encodeURIComponent(lender)}&loan_type=variable_pi&lvr_band=60_70`
+          );
+          if (fallback.ok) bm = await fallback.json();
+        }
+      }
+
+      if (!bm) {
+        setRateError("No benchmark data available for this lender yet.");
+        return;
+      }
+
+      setIsFallbackBenchmark(usedFallback);
       setBenchmark(bm);
 
       const gap = Math.max(0, rate - bm.advertised_rate);
@@ -186,32 +261,23 @@ export default function Home() {
   };
 
   const gapColor = calcResult
-    ? calcResult.gap > 0.3
-      ? "var(--red)"
-      : calcResult.gap > 0.1
-      ? "var(--amber)"
-      : "var(--green)"
+    ? calcResult.gap > 0.3 ? "var(--red)" : calcResult.gap > 0.1 ? "var(--amber)" : "var(--green)"
     : "var(--text)";
 
-  const showBrokerCta =
-    calcResult &&
-    calcResult.gap > 0.5 &&
-    BALANCE_MIDPOINTS[balanceBand] > 400000;
-
-  const bestOutcomeRate = benchmark
-    ? (benchmark.advertised_rate + 0.15).toFixed(2)
-    : null;
-
-  const targetRate = benchmark
-    ? (benchmark.advertised_rate + 0.15).toFixed(2)
+  const showBrokerCta = calcResult && calcResult.gap > 0.5 && BALANCE_MIDPOINTS[balanceBand] > 400000;
+  const bestOutcomeRate = benchmark ? (benchmark.advertised_rate + 0.15).toFixed(2) : null;
+  const targetRate = benchmark ? (benchmark.advertised_rate + 0.15).toFixed(2) : null;
+  const minutesAgo = benchmark
+    ? Math.round((Date.now() - new Date(benchmark.last_updated).getTime()) / 60000)
     : null;
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--ink)" }}>
       <Nav />
 
-      {/* Hero */}
       <div style={{ padding: "72px 48px 0", maxWidth: 1100, margin: "0 auto" }}>
+
+        {/* ACCC pill */}
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 8,
           background: "rgba(240,165,0,0.1)", border: "1px solid rgba(240,165,0,0.3)",
@@ -229,275 +295,380 @@ export default function Home() {
         <h1 style={{
           fontFamily: "'DM Serif Display', serif",
           fontSize: "clamp(38px, 5vw, 64px)",
-          lineHeight: 1.08,
-          letterSpacing: "-1.5px",
-          marginBottom: 22,
-          maxWidth: 740,
+          lineHeight: 1.08, letterSpacing: "-1.5px",
+          marginBottom: 22, maxWidth: 740,
         }}>
           Your bank charges <em style={{ color: "var(--amber)", fontStyle: "italic" }}>new customers</em> less than you.
         </h1>
 
-        <p style={{ fontSize: 16, color: "var(--text2)", lineHeight: 1.75, maxWidth: 520, marginBottom: 52 }}>
+        <p style={{ fontSize: 16, color: "var(--text2)", lineHeight: 1.75, maxWidth: 520, marginBottom: 36 }}>
           Find out exactly how much more you're paying — and what to do about it. Takes 60 seconds.
         </p>
 
-        {/* Calculator card */}
-        <div id="calculator" style={{
-          background: "var(--ink2)", border: "1px solid var(--ink4)",
-          borderRadius: 18, padding: 40, maxWidth: 760, marginBottom: 52,
+        {/* FIX 1: Sample result card above the fold */}
+        <div style={{
+          background: "linear-gradient(135deg, rgba(240,165,0,0.07), rgba(26,29,38,0.8))",
+          border: "1px solid rgba(240,165,0,0.2)",
+          borderRadius: 12, padding: "16px 22px", maxWidth: 600,
+          marginBottom: 44, display: "flex", alignItems: "center",
+          gap: 20, flexWrap: "wrap",
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 30 }}>
-            Your mortgage details
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
-            {/* Lender */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Your lender</label>
-              <select value={lender} onChange={(e) => setLender(e.target.value)} style={selectStyle}>
-                {LENDERS.map((l) => <option key={l}>{l}</option>)}
-              </select>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
+              Example · NAB · $650k variable loan
             </div>
-            {/* Loan type */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Loan type</label>
-              <select value={loanType} onChange={(e) => setLoanType(e.target.value)} style={selectStyle}>
-                <option value="variable_pi">Variable P&I</option>
-                <option value="variable_io">Variable interest-only</option>
-                <option value="fixed">Fixed (rolling off)</option>
-              </select>
-            </div>
-            {/* Years */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Years since last refinance</label>
-              <select value={years} onChange={(e) => { setYears(e.target.value); setLvrBand(YEARS_TO_LVR[e.target.value] || "60_70"); }} style={selectStyle}>
-                <option value="lt1">Less than 1 year</option>
-                <option value="1_2">1–2 years</option>
-                <option value="3_4">3–4 years</option>
-                <option value="5_7">5–7 years</option>
-                <option value="8plus">8+ years</option>
-              </select>
-            </div>
-            {/* LVR */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Approximate LVR</label>
-              <select value={lvrBand} onChange={(e) => setLvrBand(e.target.value)} style={selectStyle}>
-                {Object.entries(LVR_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-            {/* Balance */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Outstanding balance (approx)</label>
-              <select value={balanceBand} onChange={(e) => setBalanceBand(e.target.value)} style={selectStyle}>
-                {Object.entries(BALANCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-            {/* Current rate */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Your current interest rate</label>
-              <div style={{ position: "relative" }}>
-                <input
-                  type="number"
-                  value={currentRate}
-                  onChange={(e) => { setCurrentRate(e.target.value); setRateError(""); }}
-                  step={0.01} min={3} max={12}
-                  style={{ ...selectStyle, paddingRight: 32, width: "100%" }}
-                />
-                <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text3)", fontSize: 14, pointerEvents: "none" }}>%</span>
-              </div>
-              {rateError && <span style={{ fontSize: 12, color: "var(--red)" }}>{rateError}</span>}
+            <div style={{ fontSize: 14, color: "var(--text2)", lineHeight: 1.6 }}>
+              A borrower on <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text)" }}>6.49%</span> pays{" "}
+              <strong style={{ color: "var(--amber)", fontFamily: "'JetBrains Mono', monospace", fontSize: 16 }}>$2,600/yr</strong>{" "}
+              more than a comparable new customer offered <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text)" }}>6.09%</span>.
             </div>
           </div>
+          <div style={{ fontSize: 11, color: "var(--text3)", borderLeft: "1px solid var(--ink4)", paddingLeft: 20 }}>
+            62% of NAB customers<br />who called got a reduction.<br />Average cut: 0.41%
+          </div>
+        </div>
 
-          <button onClick={handleCalc} disabled={loading} style={{
-            width: "100%", background: "var(--amber)", color: "var(--ink)",
-            fontSize: 15, fontWeight: 600, padding: 15, borderRadius: 9,
-            border: "none", cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1, transition: "all 0.15s", marginTop: 4,
+        {/* Two-column layout: form + trust panel */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, maxWidth: 1060, marginBottom: 52, alignItems: "start" }}>
+
+          {/* Calculator card */}
+          <div id="calculator" style={{
+            background: "var(--ink2)", border: "1px solid var(--ink4)",
+            borderRadius: 18, padding: 40,
           }}>
-            {loading ? "Calculating…" : "Calculate my loyalty tax →"}
-          </button>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 30 }}>
+              Your mortgage details
+            </div>
 
-          {/* Results */}
-          {calcResult && benchmark && (
-            <div ref={resultsRef} style={{ marginTop: 32, paddingTop: 32, borderTop: "1px solid var(--ink4)", animation: "fadeIn 0.4s ease" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 26, flexWrap: "wrap", gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Your annual loyalty tax</div>
-                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 48, color: "var(--amber)", letterSpacing: "-1.5px", lineHeight: 1 }}>
-                    ${calcResult.annualTax.toLocaleString()}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 6 }}>
-                    Based on {benchmark.sample_size.toLocaleString()} {lender} {loanType === "variable_pi" ? "variable P&I" : loanType} customers in your LVR bracket
-                  </div>
-                </div>
-                <span style={{ background: "var(--ink3)", border: "1px solid var(--ink4)", borderRadius: 5, fontSize: 11, fontWeight: 600, color: "var(--text3)", padding: "3px 9px" }}>
-                  {lender}
-                </span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
+              {/* Lender */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Your lender</label>
+                <select value={lender} onChange={(e) => setLender(e.target.value)} style={selectStyle}>
+                  {LENDERS.map((l) => <option key={l}>{l}</option>)}
+                </select>
               </div>
 
-              {/* Metric tiles */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
-                <div style={metricTile}>
-                  <div style={metricLabel}>Your rate</div>
-                  <div style={{ ...metricValue, color: "var(--amber)" }}>{parseFloat(currentRate).toFixed(2)}%</div>
-                </div>
-                <div style={metricTile}>
-                  <div style={metricLabel}>Best new customer rate</div>
-                  <div style={{ ...metricValue, color: "var(--text)" }}>{benchmark.advertised_rate.toFixed(2)}%</div>
-                </div>
-                <div style={metricTile}>
-                  <div style={metricLabel}>The gap</div>
-                  <div style={{ ...metricValue, color: gapColor }}>{calcResult.gap.toFixed(2)}%</div>
-                </div>
+              {/* Loan type */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>
+                  Loan type
+                  <Tip text={TOOLTIPS.loanType} />
+                </label>
+                <select value={loanType} onChange={(e) => setLoanType(e.target.value)} style={selectStyle}>
+                  <option value="variable_pi">Variable P&I (principal + interest)</option>
+                  <option value="variable_io">Variable interest-only</option>
+                  <option value="fixed">Fixed (rolling off)</option>
+                </select>
               </div>
 
-              <div style={{ fontSize: 13, color: "var(--text2)", background: "var(--ink3)", borderRadius: 8, padding: "12px 16px", marginBottom: 24, borderLeft: "3px solid var(--amber)" }}>
-                Over 5 years, that's approximately{" "}
-                <strong style={{ color: "var(--amber)" }}>${calcResult.fiveYearTax.toLocaleString()}</strong>{" "}
-                extra — enough for {calcResult.anchor}.
+              {/* Years */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Years since last refinance</label>
+                <select value={years} onChange={(e) => { setYears(e.target.value); setLvrBand(YEARS_TO_LVR[e.target.value] || "60_70"); }} style={selectStyle}>
+                  <option value="lt1">Less than 1 year</option>
+                  <option value="1_2">1–2 years</option>
+                  <option value="3_4">3–4 years</option>
+                  <option value="5_7">5–7 years</option>
+                  <option value="8plus">8+ years</option>
+                </select>
               </div>
 
-              {/* Gate */}
-              {!unlocked ? (
-                <div style={{
-                  background: "linear-gradient(135deg, rgba(37,40,54,0.8), rgba(26,29,38,0.8))",
-                  border: "1px solid rgba(240,165,0,0.25)",
-                  borderRadius: 13, padding: 26,
-                }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Unlock your full breakdown</div>
-                  <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 20, lineHeight: 1.65 }}>
-                    See which customers successfully called {lender} and what rate they got — plus a personalised script for your call.
-                    Enter your email and we'll add your rate to the benchmark (anonymised, never sold).
+              {/* LVR */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>
+                  Approximate LVR
+                  <Tip text={TOOLTIPS.lvr} />
+                </label>
+                <select value={lvrBand} onChange={(e) => setLvrBand(e.target.value)} style={selectStyle}>
+                  {Object.entries(LVR_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>Not sure? Leave as-is — we'll estimate.</span>
+              </div>
+
+              {/* Balance */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>
+                  Outstanding balance (approx)
+                  <Tip text={TOOLTIPS.balance} />
+                </label>
+                <select value={balanceBand} onChange={(e) => setBalanceBand(e.target.value)} style={selectStyle}>
+                  {Object.entries(BALANCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+
+              {/* Current rate */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text2)" }}>Your current interest rate</label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="number"
+                    value={currentRate}
+                    onChange={(e) => { setCurrentRate(e.target.value); setRateError(""); }}
+                    step={0.01} min={3} max={12}
+                    style={{ ...selectStyle, paddingRight: 32, width: "100%" }}
+                  />
+                  <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text3)", fontSize: 14, pointerEvents: "none" }}>%</span>
+                </div>
+                {rateError && <span style={{ fontSize: 12, color: "var(--red)" }}>{rateError}</span>}
+              </div>
+            </div>
+
+            <button onClick={handleCalc} disabled={loading} style={{
+              width: "100%", background: "var(--amber)", color: "var(--ink)",
+              fontSize: 15, fontWeight: 600, padding: 15, borderRadius: 9,
+              border: "none", cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1, transition: "all 0.15s", marginTop: 4,
+            }}>
+              {loading ? "Calculating…" : "Check my rate →"}
+            </button>
+
+            {/* Results */}
+            {calcResult && benchmark && (
+              <div ref={resultsRef} style={{ marginTop: 32, paddingTop: 32, borderTop: "1px solid var(--ink4)", animation: "fadeIn 0.4s ease" }}>
+
+                {/* FIX 6: Sparse data banner */}
+                {isFallbackBenchmark && <SparseBanner lender={lender} />}
+
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 26, flexWrap: "wrap", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Your annual loyalty tax</div>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 48, color: "var(--amber)", letterSpacing: "-1.5px", lineHeight: 1 }}>
+                      ${calcResult.annualTax.toLocaleString()}
+                    </div>
+                    {/* FIX 5: Sample size + last updated */}
+                    <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 6 }}>
+                      Based on{" "}
+                      <strong style={{ color: "var(--text2)" }}>{benchmark.sample_size.toLocaleString()} {lender} borrowers</strong>
+                      {minutesAgo !== null && minutesAgo < 1440 && (
+                        <span> · updated {minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`}</span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
-                      placeholder="your@email.com"
-                      style={{
-                        flex: 1, minWidth: 180,
-                        background: "var(--ink4)", border: "1px solid var(--ink4)",
-                        borderRadius: 8, color: "var(--text)", padding: "11px 14px",
-                        fontSize: 14, outline: "none",
-                      }}
-                    />
-                    <button onClick={handleUnlock} disabled={unlocking} style={{
-                      background: "transparent", color: "var(--amber)",
-                      fontSize: 13, fontWeight: 600, padding: "11px 22px",
-                      borderRadius: 8, border: "1px solid rgba(240,165,0,0.4)",
-                      cursor: unlocking ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-                      opacity: unlocking ? 0.7 : 1,
-                    }}>
-                      {unlocking ? "Unlocking…" : "Unlock insights →"}
-                    </button>
+                  <span style={{ background: "var(--ink3)", border: "1px solid var(--ink4)", borderRadius: 5, fontSize: 11, fontWeight: 600, color: "var(--text3)", padding: "3px 9px" }}>
+                    {lender}
+                  </span>
+                </div>
+
+                {/* Metric tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
+                  <div style={metricTile}>
+                    <div style={metricLabel}>Your rate</div>
+                    <div style={{ ...metricValue, color: "var(--amber)" }}>{parseFloat(currentRate).toFixed(2)}%</div>
                   </div>
-                  {emailError && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 8 }}>{emailError}</div>}
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>
-                    Your email is hashed client-side before transmission. Used only for your D+3 outcome follow-up. Never sold to lenders.
+                  <div style={metricTile}>
+                    <div style={metricLabel}>Best new customer rate</div>
+                    <div style={{ ...metricValue, color: "var(--text)" }}>{benchmark.advertised_rate.toFixed(2)}%</div>
+                  </div>
+                  <div style={metricTile}>
+                    <div style={metricLabel}>The gap</div>
+                    <div style={{ ...metricValue, color: gapColor }}>{calcResult.gap.toFixed(2)}%</div>
                   </div>
                 </div>
-              ) : (
-                <div style={{ animation: "fadeIn 0.4s ease" }}>
-                  {/* Insights grid */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <div style={insightCard}>
-                      <div style={insightLabel}>Called {lender} in last 6 months</div>
-                      <div style={insightValue}>
-                        <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.call_success_rate.toFixed(0)}%</em> received a rate cut<br />
-                        Average reduction: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.avg_reduction.toFixed(2)}%</em>
-                      </div>
-                    </div>
-                    <div style={insightCard}>
-                      <div style={insightLabel}>Best outcome without refinancing</div>
-                      <div style={insightValue}>
-                        Called + threatened refi → <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{bestOutcomeRate}%</em><br />
-                        Annual saving: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${Math.round(((parseFloat(currentRate) - parseFloat(bestOutcomeRate!)) / 100) * BALANCE_MIDPOINTS[balanceBand]).toLocaleString()}/yr</em>
-                      </div>
-                    </div>
-                    <div style={insightCard}>
-                      <div style={insightLabel}>If you refinanced instead</div>
-                      <div style={insightValue}>
-                        Best available: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.advertised_rate.toFixed(2)}% ({lender === "Macquarie Bank" ? "Macquarie" : "Macquarie Bank"})</em><br />
-                        Would save approx. <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${calcResult.annualTax.toLocaleString()}/yr</em>
-                      </div>
-                    </div>
-                    <div style={insightCard}>
-                      <div style={insightLabel}>5-year cost of doing nothing</div>
-                      <div style={insightValue}>
-                        <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${calcResult.fiveYearTax.toLocaleString()}</em> in avoidable interest<br />
-                        vs calling this week
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Call script */}
-                  <button onClick={() => setScriptOpen(!scriptOpen)} style={{
-                    width: "100%", background: "transparent",
-                    border: "1px solid rgba(34,197,94,0.4)", color: "var(--green)",
-                    padding: 13, borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    cursor: "pointer", marginTop: 4,
+                <div style={{ fontSize: 13, color: "var(--text2)", background: "var(--ink3)", borderRadius: 8, padding: "12px 16px", marginBottom: 24, borderLeft: "3px solid var(--amber)" }}>
+                  Over 5 years, that's approximately{" "}
+                  <strong style={{ color: "var(--amber)" }}>${calcResult.fiveYearTax.toLocaleString()}</strong>{" "}
+                  extra — enough for {calcResult.anchor}.
+                </div>
+
+                {/* Gate */}
+                {!unlocked ? (
+                  <div style={{
+                    background: "linear-gradient(135deg, rgba(37,40,54,0.8), rgba(26,29,38,0.8))",
+                    border: "1px solid rgba(240,165,0,0.25)",
+                    borderRadius: 13, padding: 26,
                   }}>
-                    {scriptOpen ? "Hide call script ↑" : `View your call script for ${lender} ↓`}
-                  </button>
-
-                  {scriptOpen && (
-                    <div style={{
-                      background: "var(--ink3)", border: "1px solid var(--ink4)",
-                      borderRadius: 10, padding: 22, marginTop: 12, animation: "fadeIn 0.3s ease",
-                    }}>
-                      <p style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text2)" }}>
-                        <em style={{ color: "var(--text)", fontStyle: "italic" }}>
-                          "Hi, I've been a {lender} customer for approximately {years === "lt1" ? "less than a year" : years === "1_2" ? "1–2 years" : years === "3_4" ? "3–4 years" : years === "5_7" ? "5–7 years" : "8+ years"} and I'm currently on {parseFloat(currentRate).toFixed(2)}%. I can see new customers are being offered rates around {benchmark.advertised_rate.toFixed(2)}%. I'd like to discuss getting my rate reviewed — I'm prepared to refinance to another lender if we can't come to an arrangement."
-                        </em>
-                      </p>
-                      <div style={{ marginTop: 14, fontSize: 13, color: "var(--text2)", paddingTop: 14, borderTop: "1px solid var(--ink4)" }}>
-                        Based on <strong style={{ color: "var(--green)" }}>{benchmark.sample_size.toLocaleString()} {lender} borrowers</strong> who called in the last 6 months: ask for{" "}
-                        <strong style={{ color: "var(--green)" }}>{targetRate}%–{(parseFloat(targetRate!) + 0.1).toFixed(2)}%</strong> as your opening position.
-                        Most customers who got a cut received it in the same call. If they say they can't move, ask to be transferred to the retention team specifically.
-                      </div>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Unlock your full breakdown</div>
+                    <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 20, lineHeight: 1.65 }}>
+                      See which customers successfully called {lender} and what rate they got — plus a personalised call script.
+                      Enter your email and we'll add your rate to the benchmark (anonymised, never sold).
                     </div>
-                  )}
-
-                  {/* Broker CTA */}
-                  {showBrokerCta && (
-                    <div style={{
-                      background: "var(--ink3)", border: "1px solid var(--ink4)",
-                      borderRadius: 12, padding: "20px 22px", marginTop: 14,
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      gap: 16, flexWrap: "wrap",
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Want someone to do this for you?</div>
-                        <div style={{ fontSize: 12, color: "var(--text3)" }}>
-                          Our broker partners can call on your behalf and handle refinancing paperwork if needed. Most get a result within 48 hours.
-                        </div>
-                        <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6, fontStyle: "italic" }}>
-                          LoyaltyTax receives a referral fee from broker partners if you proceed to refinance. This does not affect the benchmarking data.
-                        </div>
-                      </div>
-                      <button style={{
-                        background: "var(--ink4)", color: "var(--text)",
-                        border: "1px solid var(--ink4)", padding: "10px 18px",
-                        borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        whiteSpace: "nowrap",
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
+                        placeholder="your@email.com"
+                        style={{
+                          flex: 1, minWidth: 180,
+                          background: "var(--ink4)", border: "1px solid var(--ink4)",
+                          borderRadius: 8, color: "var(--text)", padding: "11px 14px",
+                          fontSize: 14, outline: "none",
+                        }}
+                      />
+                      <button onClick={handleUnlock} disabled={unlocking} style={{
+                        background: "transparent", color: "var(--amber)",
+                        fontSize: 13, fontWeight: 600, padding: "11px 22px",
+                        borderRadius: 8, border: "1px solid rgba(240,165,0,0.4)",
+                        cursor: unlocking ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                        opacity: unlocking ? 0.7 : 1,
                       }}>
-                        Connect me with a broker →
+                        {unlocking ? "Unlocking…" : "Unlock insights →"}
                       </button>
                     </div>
-                  )}
-
-                  {/* Outcome link */}
-                  {outcomeToken && (
-                    <div style={{ marginTop: 16, fontSize: 13, color: "var(--text3)", textAlign: "center" }}>
-                      After your call, <a href={`/outcome?token=${outcomeToken}`} style={{ color: "var(--amber)" }}>report your outcome</a> to help the next borrower.
+                    {emailError && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 8 }}>{emailError}</div>}
+                    <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>
+                      Your email is hashed in your browser before transmission — the raw address never reaches our servers. Used only for your D+3 outcome follow-up.
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                ) : (
+                  <div style={{ animation: "fadeIn 0.4s ease" }}>
+                    {/* Insights grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      <div style={insightCard}>
+                        <div style={insightLabel}>Called {lender} in last 6 months</div>
+                        <div style={insightValue}>
+                          <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.call_success_rate.toFixed(0)}%</em> received a rate cut<br />
+                          Average reduction: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.avg_reduction.toFixed(2)}%</em>
+                        </div>
+                      </div>
+                      <div style={insightCard}>
+                        <div style={insightLabel}>Best outcome without refinancing</div>
+                        <div style={insightValue}>
+                          Called + threatened refi → <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{bestOutcomeRate}%</em><br />
+                          Annual saving: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${Math.round(((parseFloat(currentRate) - parseFloat(bestOutcomeRate!)) / 100) * BALANCE_MIDPOINTS[balanceBand]).toLocaleString()}/yr</em>
+                        </div>
+                      </div>
+                      <div style={insightCard}>
+                        <div style={insightLabel}>If you refinanced instead</div>
+                        <div style={insightValue}>
+                          Best available: <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>{benchmark.advertised_rate.toFixed(2)}%</em><br />
+                          Would save approx. <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${calcResult.annualTax.toLocaleString()}/yr</em>
+                        </div>
+                      </div>
+                      <div style={insightCard}>
+                        <div style={insightLabel}>5-year cost of doing nothing</div>
+                        <div style={insightValue}>
+                          <em style={{ color: "var(--amber)", fontStyle: "normal", fontWeight: 600 }}>${calcResult.fiveYearTax.toLocaleString()}</em> in avoidable interest<br />
+                          vs calling this week
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Call script */}
+                    <button onClick={() => setScriptOpen(!scriptOpen)} style={{
+                      width: "100%", background: "transparent",
+                      border: "1px solid rgba(34,197,94,0.4)", color: "var(--green)",
+                      padding: 13, borderRadius: 8, fontSize: 13, fontWeight: 600,
+                      cursor: "pointer", marginTop: 4,
+                    }}>
+                      {scriptOpen ? "Hide call script ↑" : `View your call script for ${lender} ↓`}
+                    </button>
+
+                    {scriptOpen && (
+                      <div style={{
+                        background: "var(--ink3)", border: "1px solid var(--ink4)",
+                        borderRadius: 10, padding: 22, marginTop: 12, animation: "fadeIn 0.3s ease",
+                      }}>
+                        <p style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text2)", marginBottom: 14 }}>
+                          <em style={{ color: "var(--text)", fontStyle: "italic" }}>
+                            "Hi, I've been a {lender} customer for approximately {years === "lt1" ? "less than a year" : years === "1_2" ? "1–2 years" : years === "3_4" ? "3–4 years" : years === "5_7" ? "5–7 years" : "8+ years"} and I'm currently on {parseFloat(currentRate).toFixed(2)}%. I can see new customers are being offered rates around {benchmark.advertised_rate.toFixed(2)}%. I'd like to discuss getting my rate reviewed — I'm prepared to refinance to another lender if we can't come to an arrangement."
+                          </em>
+                        </p>
+                        <div style={{ fontSize: 13, color: "var(--text2)", paddingTop: 14, borderTop: "1px solid var(--ink4)", marginBottom: 10 }}>
+                          Based on <strong style={{ color: "var(--green)" }}>{benchmark.sample_size.toLocaleString()} {lender} borrowers</strong>: ask for{" "}
+                          <strong style={{ color: "var(--green)" }}>{targetRate}%–{(parseFloat(targetRate!) + 0.1).toFixed(2)}%</strong> as your opening position.
+                          If they say no, ask to be transferred to the retention team specifically.
+                        </div>
+                        {/* FIX 1 extension: target rate + monthly saving callout */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                          <div style={{ background: "var(--ink4)", borderRadius: 8, padding: "10px 14px" }}>
+                            <div style={{ fontSize: 10, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 4 }}>Ask for</div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: "var(--green)", fontWeight: 600 }}>{targetRate}%</div>
+                          </div>
+                          <div style={{ background: "var(--ink4)", borderRadius: 8, padding: "10px 14px" }}>
+                            <div style={{ fontSize: 10, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 4 }}>Monthly saving</div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: "var(--green)", fontWeight: 600 }}>
+                              ${Math.round(calcResult.annualTax / 12).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Broker CTA */}
+                    {showBrokerCta && (
+                      <div style={{
+                        background: "var(--ink3)", border: "1px solid var(--ink4)",
+                        borderRadius: 12, padding: "20px 22px", marginTop: 14,
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        gap: 16, flexWrap: "wrap",
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Want someone to do this for you?</div>
+                          <div style={{ fontSize: 12, color: "var(--text3)" }}>
+                            Our broker partners can call on your behalf and handle refinancing paperwork if needed. Most get a result within 48 hours.
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6, fontStyle: "italic" }}>
+                            Disclosure: LoyaltyTax receives a referral fee if you proceed to refinance. This does not influence the benchmark data.
+                          </div>
+                        </div>
+                        <button style={{
+                          background: "var(--ink4)", color: "var(--text)",
+                          border: "1px solid var(--ink4)", padding: "10px 18px",
+                          borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}>
+                          Connect me with a broker →
+                        </button>
+                      </div>
+                    )}
+
+                    {outcomeToken && (
+                      <div style={{ marginTop: 16, fontSize: 13, color: "var(--text3)", textAlign: "center" }}>
+                        After your call, <a href={`/outcome?token=${outcomeToken}`} style={{ color: "var(--amber)" }}>report your outcome</a> to help the next borrower.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* FIX 4: Trust panel beside the form */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: 100 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 4 }}>
+              Why trust this
             </div>
-          )}
+            {[
+              {
+                icon: "🔒",
+                title: "Your email never leaves your browser",
+                body: "We hash it with SHA-256 before transmission. The raw address never reaches our servers.",
+              },
+              {
+                icon: "🏦",
+                title: "We don't share data with lenders",
+                body: "No lender has ever seen this data. We don't sell it, we don't share it.",
+              },
+              {
+                icon: "📊",
+                title: "Real crowd-sourced data",
+                body: "Benchmarks come from borrowers like you — not estimates. We need 30+ submissions before publishing a segment.",
+              },
+              {
+                icon: "✅",
+                title: "ACCC-backed problem",
+                body: "The loyalty tax is documented by the ACCC. Big four banks collect $4B+ annually from loyal customers.",
+              },
+              {
+                icon: "⚠️",
+                title: "General information only",
+                body: "Not financial advice. Consider independent advice before making decisions about your loan.",
+              },
+            ].map((item) => (
+              <div key={item.title} style={{
+                background: "var(--ink2)", border: "1px solid var(--ink4)",
+                borderRadius: 10, padding: "14px 16px",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span>{item.icon}</span> {item.title}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.55 }}>{item.body}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Trust bar */}
@@ -559,7 +730,6 @@ export default function Home() {
   );
 }
 
-// Styles
 const selectStyle: React.CSSProperties = {
   background: "var(--ink3)",
   border: "1px solid var(--ink4)",
@@ -581,7 +751,7 @@ const metricTile: React.CSSProperties = {
 const metricLabel: React.CSSProperties = {
   fontSize: 11,
   color: "var(--text3)",
-  textTransform: "uppercase",
+  textTransform: "uppercase" as const,
   letterSpacing: "0.8px",
   marginBottom: 7,
 };
@@ -602,7 +772,7 @@ const insightCard: React.CSSProperties = {
 const insightLabel: React.CSSProperties = {
   fontSize: 10,
   color: "var(--text3)",
-  textTransform: "uppercase",
+  textTransform: "uppercase" as const,
   letterSpacing: "0.8px",
   marginBottom: 7,
 };

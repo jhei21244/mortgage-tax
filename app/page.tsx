@@ -108,6 +108,31 @@ function Tip({ text }: { text: string }) {
   );
 }
 
+// FAQ accordion item
+function FAQItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderBottom: "1px solid var(--ink4)" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%", textAlign: "left", background: "none", border: "none",
+          padding: "18px 0", cursor: "pointer", display: "flex",
+          justifyContent: "space-between", alignItems: "center", gap: 16,
+        }}
+      >
+        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{q}</span>
+        <span style={{ color: "var(--amber)", fontSize: 18, flexShrink: 0, transition: "transform 0.2s", transform: open ? "rotate(45deg)" : "none" }}>+</span>
+      </button>
+      {open && (
+        <div style={{ fontSize: 14, color: "var(--text2)", lineHeight: 1.75, paddingBottom: 18 }}>
+          {a}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Sparse data fallback banner
 function SparseBanner({ lender }: { lender: string }) {
   return (
@@ -147,6 +172,7 @@ export default function Home() {
   const [unlocked, setUnlocked] = useState(false);
   const [outcomeToken, setOutcomeToken] = useState<string | null>(null);
   const [scriptOpen, setScriptOpen] = useState(false);
+  const [scriptCopied, setScriptCopied] = useState(false);
 
   const [stats, setStats] = useState<Stats>({ submissions: 12841, outcomes: 4203, lenders: 7 });
 
@@ -561,6 +587,21 @@ export default function Home() {
                         background: "var(--ink3)", border: "1px solid var(--ink4)",
                         borderRadius: 10, padding: 22, marginTop: 12, animation: "fadeIn 0.3s ease",
                       }}>
+                        {/* Copy to clipboard */}
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                          <button
+                            onClick={() => {
+                              const script = `Hi, I've been a ${lender} customer for approximately ${years === "lt1" ? "less than a year" : years === "1_2" ? "1–2 years" : years === "3_4" ? "3–4 years" : years === "5_7" ? "5–7 years" : "8+ years"} and I'm currently on ${parseFloat(currentRate).toFixed(2)}%. I can see new customers are being offered rates around ${benchmark!.advertised_rate.toFixed(2)}%. I'd like to discuss getting my rate reviewed — I'm prepared to refinance to another lender if we can't come to an arrangement.`;
+                              navigator.clipboard.writeText(script).then(() => {
+                                setScriptCopied(true);
+                                setTimeout(() => setScriptCopied(false), 2500);
+                              });
+                            }}
+                            style={{ background: "var(--ink4)", border: "none", color: scriptCopied ? "var(--green)" : "var(--text3)", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, cursor: "pointer" }}
+                          >
+                            {scriptCopied ? "✓ Copied" : "Copy script"}
+                          </button>
+                        </div>
                         <p style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text2)", marginBottom: 14 }}>
                           <em style={{ color: "var(--text)", fontStyle: "italic" }}>
                             "Hi, I've been a {lender} customer for approximately {years === "lt1" ? "less than a year" : years === "1_2" ? "1–2 years" : years === "3_4" ? "3–4 years" : years === "5_7" ? "5–7 years" : "8+ years"} and I'm currently on {parseFloat(currentRate).toFixed(2)}%. I can see new customers are being offered rates around {benchmark.advertised_rate.toFixed(2)}%. I'd like to discuss getting my rate reviewed — I'm prepared to refinance to another lender if we can't come to an arrangement."
@@ -699,6 +740,25 @@ export default function Home() {
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>{item.label}</span>
               </div>
             </div>
+          ))}
+        </div>
+      </div>
+
+      {/* FAQ section */}
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "72px 48px 0" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "2.5px", textTransform: "uppercase", color: "var(--amber)", marginBottom: 16 }}>FAQ</div>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: "clamp(26px,3vw,36px)", marginBottom: 36, letterSpacing: "-0.5px" }}>Common questions</h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {[
+            { q: "What is LVR?", a: "LVR stands for Loan-to-Value Ratio — it's your loan amount divided by your property's value. For example, a $500k loan on a $700k property gives you an LVR of 71%. If you're not sure, leave the default — it won't significantly affect your result." },
+            { q: "Will checking this affect my credit score?", a: "No. LoyaltyTax doesn't perform a credit check. We only use the details you enter to calculate your loyalty tax — nothing is reported to any credit bureau." },
+            { q: "Do I need to refinance?", a: "Not necessarily. Most borrowers start by calling their existing lender — it's free, takes 15 minutes, and 60%+ get a rate reduction without going anywhere. Refinancing is the backup plan if your bank won't budge." },
+            { q: "What's the difference between Variable P&I and Variable IO?", a: "P&I (principal and interest) means your repayments cover both interest and paying down the loan. IO (interest-only) means you're only paying the interest each month — the principal stays the same. Most owner-occupiers are on P&I." },
+            { q: "Is this financial advice?", a: "No. LoyaltyTax provides general information only. It is not financial advice. Before making decisions about your home loan, you should consider seeking independent financial advice from a licensed professional." },
+            { q: "How accurate is the data?", a: "Benchmarks are built from real borrower submissions — not estimates. We require a minimum of 30 data points before publishing a segment and apply outlier removal to clean the data. Every figure shows its sample size and when it was last updated." },
+            { q: "Is my data shared with my bank?", a: "Never. Your data is never shared with lenders, sold, or attributed to you individually. Your email is hashed in your browser before transmission — the raw address never reaches our servers." },
+          ].map((item, i) => (
+            <FAQItem key={i} q={item.q} a={item.a} />
           ))}
         </div>
       </div>
